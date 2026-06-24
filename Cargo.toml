@@ -1,0 +1,16 @@
+[package]
+name = "hammerhead"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bootloader = "0.9"
+x86_64 = "0.14"
+spin = { version = "0.9", features = ["once"] }
+pc-keyboard = "0.5"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

@@ -1,0 +1,1 @@
+H  A  M  M  E  R  H  E  A  D - A Light Weight Command line Based Operating System in Rust. Type "help" to See Available Commands to Interact With the System. 
