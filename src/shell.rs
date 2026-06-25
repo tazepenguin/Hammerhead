@@ -26,29 +26,43 @@ pub fn run() -> ! {
                     }
                 }
             } else {
-                // Safe hardware sleep: Yields the CPU core until the next interrupt wakes it up
+                // Safe hardware sleep while waiting for keypresses
                 x86_64::instructions::hlt();
             }
         }
 
-        let cmd = core::str::from_utf8(&line[..pos]).unwrap_or("");
+        let input_str = core::str::from_utf8(&line[..pos]).unwrap_or("");
+        
+        // Split the input into an iterator of words
+        let mut parts = input_str.trim().split_whitespace();
+        
+        // The first word is the command. If empty, skip processing.
+        let command = parts.next().unwrap_or("");
 
-        match cmd.trim() {
+        match command {
+            "" => {} // User just hit enter
             "help" => vga_buffer::print_something(
-                "Commands: help, clear, echo, shutdown, reboot, halt, cpuinfo, meminfo, date\n"
+                "Commands: help, clear, echo [text], shutdown, reboot, halt, cpuinfo, meminfo, date\n"
             ),
             "clear" => vga_buffer::clear_screen(),
+            "echo" => {
+                // Loop through all remaining words passed as arguments
+                for arg in parts {
+                    vga_buffer::print_something(arg);
+                    vga_buffer::print_something(" ");
+                }
+                vga_buffer::print_something("\n");
+            }
             "shutdown" => shut_down(),
             "reboot" => reboot::reboot(),
             "halt" => reboot::halt(),
             "cpuinfo" => cpuinfo::run(),
             "meminfo" => meminfo::run(),
             "date" => cmos::run(),
-            other if !other.is_empty() => {
+            other => {
                 vga_buffer::print_something(other);
-                vga_buffer::print_something("\n");
+                vga_buffer::print_something(": command not found\n");
             }
-            _ => {}
         }
     }
 }

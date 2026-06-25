@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
+#![feature(naked_functions)]
 
 extern crate alloc;
 
@@ -19,6 +20,7 @@ mod memory;
 mod allocator; 
 mod gdt;        
 mod interrupts; 
+mod task;
 
 static BOOT_INFO: Once<&'static BootInfo> = Once::new();
 
@@ -55,6 +57,19 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Unmask hardware interrupts at the CPU level
     x86_64::instructions::interrupts::enable(); 
 
+    // --- TESTING COOPERATIVE MULTITASKING ---
+    {
+        let task1 = task::Task::new(1, task_alpha);
+        let task2 = task::Task::new(2, task_beta);
+        
+        let mut sched = task::SCHEDULER.lock();
+        sched.add_task(task1);
+        sched.add_task(task2);
+    }
+
+    // Call a sample yield test
+    task::run_yield();
+
     shell::run();
 }
 
@@ -64,5 +79,21 @@ fn panic(info: &PanicInfo) -> ! {
     vga_buffer::print_something(info.message().as_str().unwrap_or("???"));
     loop {
         x86_64::instructions::hlt();
+    }
+}
+
+fn task_alpha() -> ! {
+    loop {
+        crate::vga_buffer::print_something("[A]");
+        for _ in 0..5000000 {} // Artificial delay
+        task::run_yield();     // Pass the torch to Task Beta
+    }
+}
+
+fn task_beta() -> ! {
+    loop {
+        crate::vga_buffer::print_something("[B]");
+        for _ in 0..5000000 {} // Artificial delay
+        task::run_yield();     // Pass the torch back to Task Alpha
     }
 }
