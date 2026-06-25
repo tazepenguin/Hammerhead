@@ -2,6 +2,6 @@
 target = "x86_64-hammerhead.json"
 
 [unstable]
-build-std = ["core", "compiler_builtins"]
+build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
-json-target-spec = true   
+json-target-spec = true
