@@ -1,28 +1,24 @@
-use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
-use spin::{Lazy, Mutex};
-use x86_64::instructions::port::Port;
+use spin::Mutex;
+use alloc::collections::VecDeque;
+use spin::Lazy;
 
-static KEYBOARD: Lazy<Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>>> = Lazy::new(|| {
-    Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore))
+// A thread-safe queue to hold characters typed by the user
+static CHAR_BUFFER: Lazy<Mutex<VecDeque<char>>> = Lazy::new(|| {
+    Mutex::new(VecDeque::new())
 });
 
-pub fn read_key() -> Option<char> {
-    let mut status_port = Port::new(0x64);
-    let status: u8 = unsafe { status_port.read() };
-    
-    // Bit 0 must be 1 if there is unread data waiting in the buffer
-    if status & 0x01 == 0 {
-        return None;
+/// Called by the interrupt handler to add characters to the queue
+pub fn add_char(c: char) {
+    let mut buffer = CHAR_BUFFER.lock();
+    if buffer.len() < 256 { // Bound buffer size to protect memory
+        buffer.push_back(c);
     }
+}
 
-    let mut data_port = Port::new(0x60);
-    let scancode: u8 = unsafe { data_port.read() };
-    
-    let mut kb = KEYBOARD.lock();
-    if let Ok(Some(event)) = kb.add_byte(scancode) {
-        if let Some(DecodedKey::Unicode(c)) = kb.process_keyevent(event) {
-            return Some(c);
-        }
-    }
-    None
+/// Called by the shell to pop characters from the queue safely
+pub fn read_key() -> Option<char> {
+    // Disable interrupts briefly while pulling a key to prevent deadlocks
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        CHAR_BUFFER.lock().pop_front()
+    })
 }

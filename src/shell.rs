@@ -25,6 +25,9 @@ pub fn run() -> ! {
                         vga_buffer::print_char(c);
                     }
                 }
+            } else {
+                // Safe hardware sleep: Yields the CPU core until the next interrupt wakes it up
+                x86_64::instructions::hlt();
             }
         }
 

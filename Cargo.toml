@@ -8,6 +8,7 @@ bootloader = { version = "0.9", features = ["map_physical_memory"] }
 x86_64 = "0.14"
 spin = { version = "0.9", features = ["once"] }
 pc-keyboard = "0.5"
+pic8259 = "0.10"
 
 [profile.dev]
 panic = "abort"
