@@ -9,6 +9,8 @@ x86_64 = "0.14"
 spin = { version = "0.9", features = ["once"] }
 pc-keyboard = "0.5"
 pic8259 = "0.10"
+acpi = { version = "5", features = ["allocator_api"] }
+
 
 [profile.dev]
 panic = "abort"

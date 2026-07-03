@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
-#![feature(naked_functions)]
 
 extern crate alloc;
 
@@ -16,11 +15,12 @@ mod cpuinfo;
 mod meminfo;
 mod cmos;
 mod reboot;
-mod memory;    
-mod allocator; 
-mod gdt;        
-mod interrupts; 
+mod memory;
+mod allocator;
+mod gdt;
+mod interrupts;
 mod task;
+mod acpi;
 
 static BOOT_INFO: Once<&'static BootInfo> = Once::new();
 
@@ -29,16 +29,13 @@ entry_point!(kernel_main);
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     BOOT_INFO.call_once(|| boot_info);
 
+    // Clear the screen; the banner is printed by the shell task when it starts.
     vga_buffer::init();
-    vga_buffer::print_banner();
-    vga_buffer::print_something("\n\n");
 
-    // Initialize core hardware exception stacks and mappings
     gdt::init();
     interrupts::init_idt();
     vga_buffer::print_something("GDT & IDT Exception Structures: OK\n");
 
-    // Initialize the PIC hardware lines
     unsafe { interrupts::PICS.lock().initialize(); }
     vga_buffer::print_something("Programmable Interrupt Controller: OK\n");
 
@@ -50,27 +47,23 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Failed to initialize Hammerhead Heap Allocator Space");
-    vga_buffer::print_something("Heap Allocator: OK [Initialized 128 KiB Space]\n");
+    vga_buffer::print_something("Heap Allocator: OK [128 KiB]\n");
 
-    vga_buffer::print_something("Enabling CPU hardware interrupt routing...\n\n");
-    
-    // Unmask hardware interrupts at the CPU level
-    x86_64::instructions::interrupts::enable(); 
+    vga_buffer::print_something("Enabling hardware interrupts...\n");
+    x86_64::instructions::interrupts::enable();
 
-    // --- TESTING COOPERATIVE MULTITASKING ---
+    // Spawn the shell as the only task and hand the CPU to it.
     {
-        let task1 = task::Task::new(1, task_alpha);
-        let task2 = task::Task::new(2, task_beta);
-        
         let mut sched = task::SCHEDULER.lock();
-        sched.add_task(task1);
-        sched.add_task(task2);
+        sched.add_task(task::Task::new(0, shell::run));
     }
 
-    // Call a sample yield test
-    task::run_yield();
-
-    shell::run();
+    // The boot context idles here; run_yield() switches to the shell on the
+    // first call and never returns to this loop while the shell is alive.
+    loop {
+        task::run_yield();
+        x86_64::instructions::hlt();
+    }
 }
 
 #[panic_handler]
@@ -79,21 +72,5 @@ fn panic(info: &PanicInfo) -> ! {
     vga_buffer::print_something(info.message().as_str().unwrap_or("???"));
     loop {
         x86_64::instructions::hlt();
-    }
-}
-
-fn task_alpha() -> ! {
-    loop {
-        crate::vga_buffer::print_something("[A]");
-        for _ in 0..5000000 {} // Artificial delay
-        task::run_yield();     // Pass the torch to Task Beta
-    }
-}
-
-fn task_beta() -> ! {
-    loop {
-        crate::vga_buffer::print_something("[B]");
-        for _ in 0..5000000 {} // Artificial delay
-        task::run_yield();     // Pass the torch back to Task Alpha
     }
 }

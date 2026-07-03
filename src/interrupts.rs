@@ -5,39 +5,34 @@ use pic8259::ChainedPics;
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
-pub static PICS: spin::Mutex<ChainedPics> = unsafe { 
-    spin::Mutex::new(ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET)) 
+pub static PICS: spin::Mutex<ChainedPics> = unsafe {
+    spin::Mutex::new(ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET))
 };
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum InterruptIndex {
-    Timer = PIC_1_OFFSET,       
-    Keyboard = PIC_1_OFFSET + 1, 
+    Timer    = PIC_1_OFFSET,
+    Keyboard = PIC_1_OFFSET + 1,
 }
 
 impl InterruptIndex {
-    fn as_u8(self) -> u8 {
-        self as u8
-    }
-    fn as_usize(self) -> usize {
-        self as usize
-    }
+    fn as_u8(self) -> u8 { self as u8 }
+    fn as_usize(self) -> usize { self as usize }
 }
 
 static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     let mut idt = InterruptDescriptorTable::new();
-    
+
     idt.breakpoint.set_handler_fn(breakpoint_handler);
     unsafe {
         idt.double_fault
             .set_handler_fn(double_fault_handler)
             .set_stack_index(crate::gdt::DOUBLE_FAULT_IST_INDEX);
     }
-    
     idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_handler);
     idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_handler);
-    
+
     idt
 });
 
@@ -57,22 +52,22 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
-    }
+    unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8()); }
 }
 
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     use x86_64::instructions::port::Port;
     use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 
-    // FIXED: Wrapped the Mutex inside spin::Lazy to bypass compile-time static checks
-    static KEYBOARD: Lazy<spin::Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>>> = Lazy::new(|| {
-        spin::Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore))
-    });
+    static KEYBOARD: Lazy<spin::Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>>> =
+        Lazy::new(|| {
+            spin::Mutex::new(
+                Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
+            )
+        });
 
     let mut keyboard = KEYBOARD.lock();
-    let mut port = Port::new(0x60); 
+    let mut port = Port::new(0x60u16);
     let scancode: u8 = unsafe { port.read() };
 
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
@@ -80,15 +75,22 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
             match key {
                 DecodedKey::Unicode(character) => {
                     crate::keyboard::add_char(character);
-                },
-                DecodedKey::RawKey(key) => {
-                    crate::vga_buffer::print_fmt(format_args!("{:?}", key));
+                }
+                DecodedKey::RawKey(_key) => {
+                    // Non-unicode keys (arrows, function keys, etc.) are
+                    // silently dropped for now.  Extending this to handle
+                    // cursor movement or command history is straightforward:
+                    // add a parallel RawKey queue in keyboard.rs and drain
+                    // it in shell.rs alongside read_key().
+                    //
+                    // We deliberately do NOT call print_fmt here: doing so
+                    // while the shell might hold the WRITER spin-lock (even
+                    // with without_interrupts protection) is unnecessary
+                    // and was a latent deadlock risk.
                 }
             }
         }
     }
 
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
-    }
+    unsafe { PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8()); }
 }
