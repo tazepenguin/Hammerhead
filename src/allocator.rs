@@ -144,3 +144,25 @@ pub fn init_heap(
 
     Ok(())
 }
+
+// ── Heap diagnostics ─────────────────────────────────────────────────────────
+
+/// Walk the free list and return `(used_bytes, free_bytes, total_bytes)`.
+///
+/// O(n) in the number of free blocks, which is small for a 128 KiB heap.
+pub fn heap_stats() -> (usize, usize, usize) {
+    let alloc = ALLOCATOR.inner.lock();
+    let mut free_total = 0usize;
+    let mut free_blocks = 0usize;
+    let mut node = alloc.head.next;
+    unsafe {
+        while !node.is_null() {
+            free_total  += (*node).size;
+            free_blocks += 1;
+            node = (*node).next;
+        }
+    }
+    let _ = free_blocks; // available if you want to display fragmentation
+    let used = HEAP_SIZE.saturating_sub(free_total);
+    (used, free_total, HEAP_SIZE)
+}
